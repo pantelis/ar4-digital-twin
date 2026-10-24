@@ -1,10 +1,13 @@
 [project]
 name = "ar4-twin-tools"
 version = "0.1.0"
-description = "Checks for the AR4 digital twin project: an MCP call logger and the Newton harness checks"
+description = "The AR4 digital twin project: the ar4 kDB profile, an MCP call logger and the Newton harness checks"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "kdb-tools",
+    "pyyaml>=6",
+]
 
 [project.optional-dependencies]
 sim = ["newton[sim]==1.7.0", "warp-lang==1.18.0", "numpy"]
@@ -12,9 +15,16 @@ sim = ["newton[sim]==1.7.0", "warp-lang==1.18.0", "numpy"]
 [project.scripts]
 twin-mcp-log = "twin_tools.mcp_log:main"
 twin-check = "twin_tools.check:main"
+# The core's commands, declared here too: uv tool install exposes only this package's own commands.
+okf-validate = "kdb_tools.validate:main"
+okf-ground = "kdb_tools.ground:main"
+okf-diff = "kdb_tools.diff:main"
+
+[project.entry-points."kdb_tools.profiles"]
+ar4 = "twin_tools.profile:PROFILE"
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "reportlab>=4", "pypdf>=5", "openpyxl>=3.1"]
 
 [build-system]
 requires = ["hatchling"]
@@ -25,3 +35,6 @@ packages = ["src/twin_tools"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv.sources]
+kdb-tools = { git = "https://github.com/aegean-ai/kdb-tools", tag = "v0.4.0" }
