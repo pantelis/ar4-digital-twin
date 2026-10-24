@@ -27,9 +27,14 @@ The agent sends back any quote that is not on its page, any cell that does not h
 and any unit outside the list.
 
 `twinagent/cad.py` gives an agent the FreeCAD server's tools, through `twinagent/freecad.py`, and
-a `quantities` tool that reads a kDB page. The agent models one link, saves the FreeCAD document
-and exports an STL mesh. Its output validator checks that both files exist and copies them into
-`cad/`. `twinagent/freecad.py` starts the server with the command in `kdb.toml`, by default
+a `read_page` tool that reads a kDB page: its text and its quantities. The agent models one
+link, saves the FreeCAD document and exports an STL mesh. With its answer it states the volume,
+the bounding box size and the number of through holes it expects, worked out from the page's
+quantities. The output validator measures the mesh with `twinagent/solid.py`, which needs no
+FreeCAD. It checks that the mesh is one closed piece, compares the rest with what the agent
+expected, and sends back the measurements when they differ. The files go into `cad/` only once
+they agree. This catches a cut made in the wrong place and a cut that FreeCAD silently lost. It
+cannot catch a part whose expectation is wrong in the same way as its geometry. `twinagent/freecad.py` starts the server with the command in `kdb.toml`, by default
 `docker/run.sh twin-blwfish`, and sends back any result that carries an error.
 
 `twinagent/cli.py` is the `twin` command, with `ingest` and `cad`.
@@ -43,9 +48,9 @@ sources and highlights, `index.md` and `log.md`. `write_pages` raises `NotImplem
 you write it.
 
 For the parts: instructions that make each link parametric, with its dimensions in a
-spreadsheet bound to the sketches, so that a changed kDB value rebuilds the part. Checking the
-solid the agent built against the kDB is yours too, because blwfish reports some failures as
-success; the project README lists them. Then `twin/build.py`: the links' frames, the joint axes,
+spreadsheet bound to the sketches, so that a changed kDB value rebuilds the part. Stronger
+checks against the kDB are yours too, such as the positions of the bores, because blwfish
+reports some failures as success; the project README lists them. Then `twin/build.py`: the links' frames, the joint axes,
 and every number read from the kDB with `twin_tools.kdb.si`.
 
 The project page lists everything the twin and the program must do, and how they are graded.

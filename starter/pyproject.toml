@@ -28,3 +28,4 @@ kdb-tools = { git = "https://github.com/aegean-ai/kdb-tools", tag = "v0.4.0" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]

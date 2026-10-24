@@ -1,5 +1,7 @@
 """The starter's plumbing works offline: a scripted model stands in for the server, and no FreeCAD runs."""
 
+from pathlib import Path
+
 import anyio
 import pytest
 from kdb_tools.agent import Chunk, sheet_chunks
@@ -9,6 +11,8 @@ from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.messages import ModelResponse, RetryPromptPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.toolsets import FunctionToolset
+
+from meshes import box, frame, write
 
 from twinagent import cad, cli, freecad, ingest
 
@@ -88,18 +92,24 @@ def repo(tmp_path):
     return tmp_path
 
 
+PART = {"link": "links/link-2.md", "fcstd": "/work/.home/out/link-2.FCStd", "mesh": "/work/.home/out/link-2.stl",
+        "expected_volume_mm3": 32000, "expected_size_mm": [60, 60, 10], "expected_through_holes": 1}
+
+
+def sent_back(messages, words):
+    return [str(p.content) for m in messages for p in m.parts
+            if isinstance(p, (RetryPromptPart, ToolReturnPart)) and words in str(p.content)]
+
+
 def test_the_cad_agent_sends_back_files_it_did_not_write_and_copies_the_ones_it_did(repo):
-    part = {"link": "links/link-2.md", "fcstd": "/work/.home/out/link-2.FCStd", "mesh": "/work/.home/out/link-2.stl"}
     out_dir = repo / ".home" / "out"
 
     def respond(messages, info: AgentInfo) -> ModelResponse:
-        retried = any(isinstance(p, (RetryPromptPart, ToolReturnPart)) and "do not exist" in str(p.content)
-                      for m in messages for p in m.parts)
-        if retried:  # the "FreeCAD" run writes the files only after being sent back
-            out_dir.mkdir(parents=True, exist_ok=True)
+        if sent_back(messages, "do not exist"):  # the "FreeCAD" run writes the files only after being sent back
+            (out_dir / "link-2.FCStd").parent.mkdir(parents=True, exist_ok=True)
             (out_dir / "link-2.FCStd").write_bytes(b"fcstd")
-            (out_dir / "link-2.stl").write_bytes(b"solid")
-        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, part)])
+            write(out_dir / "link-2.stl", frame(60, 20, 10))
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, PART)])
 
     agent = cad.make_agent(FunctionModel(respond), FunctionToolset([]))
     out = cad.build_part(agent, repo, repo / "kdb", "links/link-2.md")
@@ -107,11 +117,30 @@ def test_the_cad_agent_sends_back_files_it_did_not_write_and_copies_the_ones_it_
     assert (repo / "cad" / "link-2.FCStd").read_bytes() == b"fcstd" and (repo / "cad" / "link-2.stl").is_file()
 
 
+def test_the_cad_agent_sends_back_a_part_whose_mesh_differs_from_what_it_expected(repo):
+    out_dir = repo / ".home" / "out"
+    (out_dir / "link-2.FCStd").parent.mkdir(parents=True, exist_ok=True)
+    (out_dir / "link-2.FCStd").write_bytes(b"fcstd")
+    write(out_dir / "link-2.stl", box(60, 60, 10))  # the cut was lost: no hole
+    seen = []
+
+    def respond(messages, info: AgentInfo) -> ModelResponse:
+        seen[:] = sent_back(messages, "does not match")
+        if seen:  # fixed in "FreeCAD" after being sent back
+            write(out_dir / "link-2.stl", frame(60, 20, 10))
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, PART)])
+
+    cad.build_part(cad.make_agent(FunctionModel(respond), FunctionToolset([])), repo, repo / "kdb", "links/link-2.md")
+    assert "36000.0 mm^3, not 32000.0" in seen[0] and "0 through holes, not 1" in seen[0]
+    assert cad.solid.measure(repo / "cad" / "link-2.stl").through_holes == 1
+
+
 def test_the_cad_agent_reads_quantities_from_the_kdb(repo):
     agent = cad.make_agent(scripted({})[0], FunctionToolset([]))
-    tool = agent._function_toolset.tools["quantities"].function
+    tool = agent._function_toolset.tools["read_page"].function
     ctx = type("Ctx", (), {"deps": cad.Workspace(repo, repo / "kdb")})()
-    assert tool(ctx, "links/link-2.md")["length"]["value"] == 305
+    got = tool(ctx, "links/link-2.md")
+    assert got["title"] == "Link 2" and got["text"].startswith("Link 2.") and got["quantities"]["length"]["value"] == 305
     with pytest.raises(ModelRetry, match="no page"):
         tool(ctx, "links/link-9.md")
 
@@ -122,3 +151,42 @@ def test_commands_still_to_write_say_so(tmp_path, gears, capsys, monkeypatch):
         "run_sync": lambda self, prompt, deps: type("R", (), {"output": ingest.Found()})()})())
     assert cli.main(["--config", str(tmp_path / "kdb.toml"), "--kdb", str(tmp_path / "kdb"), "ingest", str(gears)]) == 2
     assert "not written yet" in capsys.readouterr().err
+
+
+def test_the_cad_agent_carries_the_workflow_and_the_servers_advice():
+    class FakeServer(FunctionToolset):
+        async def direct_call_tool(self, name, args):
+            assert name == "get_usage_guidance"
+            return f"advice for {args.get('topic', args['operation'])}"
+
+    agent = cad.make_agent(scripted({})[0], FakeServer([]))
+    assert anyio.run(cad.server_guidance, FakeServer([])) == "advice for strategy\n\nadvice for document\n\nadvice for measurement"
+    seen = []
+
+    def respond(messages, info: AgentInfo) -> ModelResponse:
+        seen.append(messages[0].instructions)
+        raise RuntimeError("stop")
+
+    agent = cad.make_agent(FunctionModel(respond), FakeServer([]))
+    with pytest.raises(RuntimeError):
+        agent.run_sync("go", deps=cad.Workspace(Path("."), Path("kdb")))
+    assert "spawn_freecad_instance(gui=false) once" in seen[0] and "advice for measurement" in seen[0]
+
+
+def test_the_same_freecad_call_made_too_often_in_a_row_is_refused():
+    guarded, made = freecad.loop_guard(repeats=3), []
+
+    async def call_tool(name, args):
+        made.append(args)
+        return '{"result": "Added rectangle"}'
+
+    async def call(args):
+        return await guarded(None, call_tool, "sketch_operations", args)
+
+    rect = {"operation": "add_rectangle", "width": 365}
+    for _ in range(3):
+        anyio.run(call, rect)
+    with pytest.raises(ModelRetry, match="3 times in a row"):
+        anyio.run(call, rect)
+    anyio.run(call, dict(rect, height=60))  # a changed call goes through
+    assert len(made) == 4

@@ -47,7 +47,7 @@ wheels = [
 [[package]]
 name = "ar4-twin-tools"
 version = "0.1.0"
-source = { git = "https://github.com/pantelis/ar4-digital-twin#bb063ce2b3dcb7fefd10f98a1a03e4109392690b" }
+source = { git = "https://github.com/pantelis/ar4-digital-twin#9c8ac485240db843a841ab6d122adddbcf7024f3" }
 dependencies = [
     { name = "kdb-tools" },
     { name = "pyyaml" },
