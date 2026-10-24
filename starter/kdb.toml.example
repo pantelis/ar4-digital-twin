@@ -1,0 +1,19 @@
+# Copy to kdb.toml. Any OpenAI-compatible server works; at grading time we point this at ours.
+# Never write an API key here: api_key_env names the environment variable that holds it.
+
+# A local server. Ollama is shown; llama.cpp, vLLM, SGLang and LM Studio serve the same API.
+base_url = "http://localhost:11434/v1"
+model = "gemma4:31b-it-qat"
+context = 32768                          # the context the server is configured with, in tokens
+# Gemma 4 reasons before every answer unless told not to, which makes each answer several times
+# slower. "none" switches that off; delete the line for a model where reasoning helps.
+reasoning_effort = "none"
+
+# OpenRouter, with a free model or with a credit limit set on the key:
+# base_url = "https://openrouter.ai/api/v1"
+# model = "<a model id from openrouter.ai/models, such as one ending in :free>"
+# context = 32768
+# api_key_env = "OPENROUTER_API_KEY"
+
+# How to start the FreeCAD MCP server: the project container, with every call logged to logs/.
+freecad = ["docker/run.sh", "twin-blwfish"]
