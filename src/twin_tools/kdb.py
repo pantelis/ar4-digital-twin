@@ -54,16 +54,22 @@ def clear() -> None:
     _reads.clear()
 
 
-def quantities(page: str) -> dict:
+def page(rel: str) -> tuple[dict, str]:
+    """A page's frontmatter and body."""
     base = root().resolve()
-    path = (base / page.lstrip("/")).resolve()
+    path = (base / rel.lstrip("/")).resolve()
     if not path.is_file() or not path.is_relative_to(base):
-        raise KdbError(f"there is no page {page} in the kDB at {base}")
+        raise KdbError(f"there is no page {rel} in the kDB at {base}")
     text = path.read_text(encoding="utf-8")
-    if not text.startswith("---\n") or "\n---" not in text[3:]:
-        raise KdbError(f"{page} has no frontmatter")
-    fm = yaml.safe_load(text[4:text.index("\n---", 3)]) or {}
-    found = fm.get("quantities") if isinstance(fm, dict) else None
+    end = text.find("\n---", 3)
+    if not text.startswith("---\n") or end == -1:
+        raise KdbError(f"{rel} has no frontmatter")
+    fm = yaml.safe_load(text[4:end]) or {}
+    return (fm if isinstance(fm, dict) else {}), text[end + 4:].lstrip("-\n")
+
+
+def quantities(rel: str) -> dict:
+    found = page(rel)[0].get("quantities")
     return found if isinstance(found, dict) else {}
 
 

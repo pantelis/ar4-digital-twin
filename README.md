@@ -184,12 +184,20 @@ will meet them, so it has to check what it built rather than trust the tool resu
   counts these as failures, and the starter sends them back to the model.
 - Some failures come back as a normal result with no error at all, such as
   `{"result": "No active document. Call view_control(operation='create_document') first."}`.
+- `execute_python` can report only a style tip as its result while the code it ran had no effect.
+  Assigning a new shape to a parametric object such as a `Part::Box` and then calling
+  `recompute()` rebuilds the box from its own parameters, so a cut made that way disappears.
 - `add_constraint` with an expression FreeCAD cannot resolve still adds the constraint, with value 0,
   and reports success.
 - `add_rectangle` and `add_circle` add their own fixed-value size and position constraints. Adding
   your own on top makes the sketch over-constrained. The features built on it then fail to compute,
   while `pocket` and `recompute` still report success and the measurement tools report the last
   valid shape.
+- `varset_operations` with `add_property` reports "Added property" but ignores its `value`, so the
+  property stays at 0. Set the value afterwards with `set_property` and read it back.
+- `execute_python` can save the open document by itself; the result then carries an `autosave`
+  field. A value you changed only to test the part can end up in the saved file, so set it back and
+  save again before you export.
 - `get_mass_properties` fails because the Body's shape is a compound. Measure `Shape.Solids[0]` instead.
 - Exports and saves work only under the home directory (`/work/.home` in the container) or `/tmp`.
 - FreeCAD rejects spreadsheet aliases that are unit symbols, such as `W` or `T`.
