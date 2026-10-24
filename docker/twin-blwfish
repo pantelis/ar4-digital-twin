@@ -1,0 +1,7 @@
+#!/bin/bash
+# The blwfish FreeCAD MCP server over stdio, behind the call logger. Every message goes to
+# /work/logs/mcp-calls.jsonl; `twin-mcp-log summary logs/mcp-calls.jsonl` lists the tool calls.
+export FREECAD_MCP_FREECAD_BIN=/opt/conda/bin/freecadcmd
+export FREECAD_MCP_MODULE_DIR=/opt/blwfish/AICopilot
+export PYTHONPATH=/opt/blwfish${PYTHONPATH:+:$PYTHONPATH}
+exec twin-mcp-log run --log "${TWIN_MCP_LOG:-/work/logs/mcp-calls.jsonl}" -- python /opt/blwfish/freecad_mcp_server.py
