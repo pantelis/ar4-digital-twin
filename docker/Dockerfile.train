@@ -1,0 +1,5 @@
+# The training environment: ar4-twin plus torch (CUDA 12.8 wheels, which support Blackwell sm_120) and rsl_rl.
+# Build from the repository root, after ar4-twin exists:  docker build -f docker/Dockerfile.train -t ar4-train .
+FROM ar4-twin
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu128
+RUN pip install --no-cache-dir "rsl-rl-lib==5.5.1" "pddl==0.5.1"
