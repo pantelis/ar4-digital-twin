@@ -1,8 +1,7 @@
 # Starter for your AR4 twin agent
 
-Copy this directory into your own project repository to start your agent. It holds the plumbing
-every solution needs, so you can spend your time on reading the documents well and on building
-the parts.
+Copy this directory into your own project repository to start your agent. It holds the plumbing,
+so you can spend your time on reading the documents well and on building the parts.
 
 ```bash
 cp -r starter/ ../my-twin-agent && cd ../my-twin-agent
@@ -13,44 +12,35 @@ uv run pytest                    # offline: a scripted model stands in for the s
 
 ## What it does
 
-Most of the plumbing comes from the `agent` extra of
-[kdb-tools](https://github.com/aegean-ai/kdb-tools), which the Introduction to AI project uses
-too. `kdb_tools.config` reads the model server from `kdb.toml`, a local server or OpenRouter,
-and refuses an API key written in the file. Name the environment variable that holds the key
-in `api_key_env`. `kdb_tools.guard` refuses a prompt the server would cut.
+`twin` is the command, with `ingest` and `cad` (`twinagent/cli.py`). The model server comes from
+`kdb.toml`: a local server or OpenRouter. Name the environment variable that holds your API key in
+`api_key_env`. The starter refuses a key written in the file.
 
-`twinagent/ingest.py` reads a PDF three pages at a time, or a spreadsheet one sheet at a time,
-with the kdb-tools extraction agent. Each number comes back typed: the part it belongs to, the
-page type, a quantity name, the number and a unit from `twin_tools.units`. A number read from
-text carries its quote and page, and one read from a spreadsheet carries its cell and value.
-The agent sends back any quote that is not on its page, any cell that does not hold the value,
-and any unit outside the list.
+`ingest` (`twinagent/ingest.py`) reads a PDF three pages at a time, or a spreadsheet one sheet at a
+time. Each number comes back typed: the part it belongs to, the page type, a quantity name, the
+number and a unit from `twin_tools.units`. A number from text carries its quote and page, and one
+from a spreadsheet carries its cell and value. The agent sends back any quote that is not on its
+page, any cell that does not hold the value, and any unit outside the list.
 
-`twinagent/cad.py` gives an agent the FreeCAD server's tools, through `twinagent/freecad.py`, and
-a `read_page` tool that reads a kDB page: its text and its quantities. The agent models one
-link, saves the FreeCAD document and exports an STL mesh. With its answer it states the volume,
-the bounding box size and the number of through holes it expects, worked out from the page's
-quantities. The output validator measures the mesh with `twinagent/solid.py`, which needs no
-FreeCAD. It checks that the mesh is one closed piece, compares the rest with what the agent
-expected, and sends back the measurements when they differ. The files go into `cad/` only once
-they agree. This catches a cut made in the wrong place and a cut that FreeCAD silently lost. It
-cannot catch a part whose expectation is wrong in the same way as its geometry. `twinagent/freecad.py` starts the server with the command in `kdb.toml`, by default
-`docker/run.sh twin-blwfish`, and sends back any result that carries an error.
-
-`twinagent/cli.py` is the `twin` command, with `ingest` and `cad`.
+`cad` (`twinagent/cad.py`) gives the model the FreeCAD server's tools and a `read_page` tool for
+kDB pages. The model builds one link, saves the FreeCAD document and exports an STL mesh. With
+its answer it states the volume, the bounding box size and the number of through holes it
+expects. `twinagent/solid.py` measures the mesh, checks that it is one closed piece and compares
+it with that expectation. The files go into `cad/` only when they agree. This catches a cut made
+in the wrong place or silently lost by FreeCAD. It cannot catch an expectation that is wrong in
+the same way as the geometry.
 
 ## What is yours
 
-Everything that turns this into a kDB and a twin. For the kDB: the instructions, which pages to
-read, tables inside the PDFs, merging the same part across documents, formulas for derived values
-such as a joint's velocity limit from its motor and gearbox, and writing the pages with their
-sources and highlights, `index.md` and `log.md`. `write_pages` raises `NotImplementedError` until
-you write it.
+For the kDB: the instructions, which pages to read, tables inside the PDFs, merging the same part
+across documents, formulas for derived values such as a joint's velocity limit, and writing the
+pages with their sources and highlights, `index.md` and `log.md`. `write_pages` raises
+`NotImplementedError` until you write it.
 
-For the parts: instructions that make each link parametric, with its dimensions in a
-spreadsheet bound to the sketches, so that a changed kDB value rebuilds the part. Stronger
-checks against the kDB are yours too, such as the positions of the bores, because blwfish
-reports some failures as success; the project README lists them. Then `twin/build.py`: the links' frames, the joint axes,
-and every number read from the kDB with `twin_tools.kdb.si`.
+For the parts: instructions that make each link parametric, with its dimensions in a spreadsheet
+bound to the sketches, so that a changed kDB value rebuilds the part. Add stronger checks against
+the kDB, such as the positions of the bores, because blwfish reports some failures as success (see
+the known issues in the project README).
 
-The project page lists everything the twin and the program must do, and how they are graded.
+For the twin: `twin/build.py`, with the links' frames, the joint axes, and every number read from
+the kDB with `twin_tools.kdb.si`.

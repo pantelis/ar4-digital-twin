@@ -11,7 +11,7 @@ ARG BLWFISH_COMMIT=7fc5d8fa5186c060ec868183567cf100c717fa66
 RUN git clone https://github.com/blwfish/freecad-mcp.git /opt/blwfish && git -C /opt/blwfish checkout ${BLWFISH_COMMIT} \
  && pip install --no-cache-dir -r /opt/blwfish/requirements.txt
 # kdb-tools, pinned by tag: okf-validate and okf-ground, with this project's ar4 profile
-RUN pip install --no-cache-dir "kdb-tools @ git+https://github.com/aegean-ai/kdb-tools@v0.4.0"
+RUN pip install --no-cache-dir "kdb-tools @ git+https://github.com/aegean-ai/kdb-tools@v0.5.1"
 COPY pyproject.toml README.md /opt/twin/
 COPY src /opt/twin/src
 RUN pip install --no-cache-dir "/opt/twin[sim]"
