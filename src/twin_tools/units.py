@@ -21,6 +21,11 @@ UNITS: dict[str, tuple[str, float]] = {
     "g": ("mass", 1e-3),
     "m": ("length", 1.0),
     "mm": ("length", 1e-3),
+    "m/s": ("speed", 1.0),
+    "mm/s": ("speed", 1e-3),
+    "mm^3": ("volume", 1e-9),
+    "cm^3": ("volume", 1e-6),
+    "m^3": ("volume", 1.0),
     "kg/m^3": ("density", 1.0),
     "g/cm^3": ("density", 1000.0),
     "kg m^2": ("inertia", 1.0),
@@ -28,6 +33,8 @@ UNITS: dict[str, tuple[str, float]] = {
     "A": ("current", 1.0),
     "V": ("voltage", 1.0),
     "W": ("power", 1.0),
+    "s": ("time", 1.0),
+    "us": ("time", 1e-6),
     "1": ("ratio", 1.0),
 }
 

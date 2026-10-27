@@ -17,7 +17,8 @@ def q(value, unit, **kw):
 
 def joint(**quantities):
     base = {"lower_limit": q(-42, "deg"), "upper_limit": q(90, "deg"), "velocity_limit": q(45, "deg/s"),
-            "effort_limit": q(20, "N m")}
+            "effort_limit": q(20, "N m"),
+            "dh_theta_offset": q(0, "deg"), "dh_alpha": q(-90, "deg"), "dh_d": q(150, "mm"), "dh_a": q(50, "mm")}
     base.update(quantities)
     return concept(type="Joint", title="J2", parent="/links/link-1.md", child="/links/link-2.md",
                    sources=[dict(SRC)], quantities={k: v for k, v in base.items() if v is not None})
@@ -52,6 +53,11 @@ def test_a_complete_joint_passes(arm):
 
 def test_a_joint_without_an_effort_limit_fails(arm):
     arm.add("joints/j2.md", joint(effort_limit=None), BODY)
+    assert check(arm) == [("ar4.required", "joints/j2.md")]
+
+
+def test_a_joint_without_dh_fails(arm):
+    arm.add("joints/j2.md", joint(dh_a=None), BODY)
     assert check(arm) == [("ar4.required", "joints/j2.md")]
 
 
@@ -99,3 +105,61 @@ def test_a_gearbox_needs_its_ratio_and_a_material_its_density(arm):
     arm.add("gearboxes/j3.md", concept(type="Gearbox", title="J3 gearbox", sources=[dict(SRC)]), BODY)
     arm.add("materials/steel.md", concept(type="Material", title="Steel", sources=[dict(SRC)]), BODY)
     assert check(arm) == [("ar4.required", "gearboxes/j3.md"), ("ar4.required", "materials/steel.md")]
+
+
+def gripper(**quantities):
+    base = {"jaw_stroke": q(12, "mm"), "jaw_force": q(40, "N"), "jaw_speed": q(60, "mm/s")}
+    base.update(quantities)
+    return concept(type="Gripper", title="Servo gripper", material="/materials/aluminum-6061.md",
+                   sources=[dict(SRC)], quantities={k: v for k, v in base.items() if v is not None})
+
+
+def test_a_gripper_needs_stroke_force_and_speed(arm):
+    arm.add("grippers/servo.md", concept(type="Gripper", title="Servo gripper", material="/materials/aluminum-6061.md",
+                                         sources=[dict(SRC)]), BODY)
+    report = validate(arm.root, [PROFILE])
+    found = [f for f in report.findings if f.level == "error"]
+    assert errors(report) == [("ar4.required", "grippers/servo.md")]
+    text = " ".join(f.message for f in found)
+    for name in ("jaw_stroke", "jaw_force", "jaw_speed"):
+        assert name in text
+
+
+def test_a_complete_gripper_passes(arm):
+    arm.add("grippers/servo.md", gripper(), BODY)
+    assert check(arm) == []
+
+
+def test_jaw_speed_in_a_length_unit_is_an_error(arm):
+    arm.add("grippers/servo.md", gripper(jaw_speed=q(60, "mm")), BODY)
+    report = validate(arm.root, [PROFILE])
+    found = [f for f in report.findings if f.level == "error"]
+    assert errors(report) == [("ar4.required", "grippers/servo.md")]
+    assert len(found) == 1 and "speed" in found[0].message
+
+
+def test_a_gripper_needs_its_material(arm):
+    arm.add("grippers/servo.md", concept(type="Gripper", title="Servo gripper", sources=[dict(SRC)],
+                                         quantities={"jaw_stroke": q(12, "mm"), "jaw_force": q(40, "N"),
+                                                     "jaw_speed": q(60, "mm/s")}), BODY)
+    report = validate(arm.root, [PROFILE])
+    assert errors(report) == [("ar4.required", "grippers/servo.md")]
+    assert "material" in " ".join(f.message for f in report.findings if f.level == "error")
+
+
+def test_a_formula_over_volume_and_density_gives_a_mass(arm):
+    arm.add("materials/petg.md", concept(type="Material", title="PETG", sources=[dict(SRC)],
+                                         quantities={"density": q(1.27, "g/cm^3")}), BODY)
+    arm.add("grippers/servo.md", concept(
+        type="Gripper", title="Servo gripper", material="/materials/petg.md", sources=[dict(SRC)],
+        quantities={"jaw_stroke": q(12, "mm"), "jaw_force": q(40, "N"), "jaw_speed": q(60, "mm/s"),
+                    "volume": q(20000, "mm^3"),
+                    "mass": {"value": 0.0254, "unit": "kg",
+                             "formula": "/grippers/servo.md#volume * /materials/petg.md#density * 1e-6"}}), BODY)
+    assert check(arm) == []
+
+
+def test_time_units_are_known():
+    from twin_tools import units as U
+    assert U.kind("s") == U.kind("us") == "time"
+    assert U.to_si(1, "us") == 1e-6

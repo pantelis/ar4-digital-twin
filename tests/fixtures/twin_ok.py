@@ -1,8 +1,12 @@
-"""A two-link arm whose every value is read from the kDB in fixtures/kdb: densities, joint limits, effort and velocity limits."""
+"""A two-link arm with the servo gripper on its forearm. Every value is read from the kDB in fixtures/kdb:
+densities, joint limits, effort and velocity limits. build_gripper() builds the same gripper on its own."""
 import warp as wp
 
 import newton
+from fixtures.gripper import add_gripper, mount_on
 from twin_tools.kdb import si
+
+FOREARM = 0.22  # m
 
 
 def joint(builder, parent, child, page, **kw):
@@ -16,7 +20,14 @@ def build(builder: newton.ModelBuilder) -> None:
     upper = builder.add_link(label="upper_arm")
     builder.add_shape_box(upper, xform=wp.transform((0.15, 0.0, 0.0), wp.quat_identity()), hx=0.15, hy=0.03, hz=0.01, cfg=cfg)
     fore = builder.add_link(label="forearm")
-    builder.add_shape_box(fore, xform=wp.transform((0.11, 0.0, 0.0), wp.quat_identity()), hx=0.11, hy=0.025, hz=0.01, cfg=cfg)
-    j2 = joint(builder, -1, upper, "joints/j2.md", parent_xform=wp.transform((0.0, 0.0, 0.5), wp.quat_identity()))
-    j3 = joint(builder, upper, fore, "joints/j3.md", parent_xform=wp.transform((0.3, 0.0, 0.0), wp.quat_identity()))
-    builder.add_articulation([j2, j3])
+    builder.add_shape_box(fore, xform=wp.transform((FOREARM / 2, 0.0, 0.0), wp.quat_identity()), hx=FOREARM / 2, hy=0.025, hz=0.01, cfg=cfg)
+    joint(builder, -1, upper, "joints/j2.md", parent_xform=wp.transform((0.0, 0.0, 0.5), wp.quat_identity()))
+    joint(builder, upper, fore, "joints/j3.md", parent_xform=wp.transform((0.280, 0.0, 0.0), wp.quat_identity()))
+    add_gripper(builder, fore, mount_on(FOREARM))
+    builder.add_articulation(list(range(builder.joint_count)))
+
+
+def build_gripper(builder: newton.ModelBuilder) -> wp.transform:
+    grasp = add_gripper(builder, -1, wp.transform_identity())
+    builder.add_articulation(list(range(builder.joint_count)))
+    return grasp

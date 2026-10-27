@@ -88,7 +88,7 @@ def test_the_freecad_toolset_starts_the_configured_server(tmp_path):
 def repo(tmp_path):
     (tmp_path / "kdb" / "links").mkdir(parents=True)
     (tmp_path / "kdb" / "links" / "link-2.md").write_text(
-        "---\ntype: Link\ntitle: Link 2\nquantities:\n  length: {value: 305, unit: mm, source: s1}\n---\n\nLink 2.\n")
+        "---\ntype: Link\ntitle: Link 2\nquantities:\n  length: {value: 280, unit: mm, source: s1}\n---\n\nLink 2.\n")
     return tmp_path
 
 
@@ -140,7 +140,7 @@ def test_the_cad_agent_reads_quantities_from_the_kdb(repo):
     tool = agent._function_toolset.tools["read_page"].function
     ctx = type("Ctx", (), {"deps": cad.Workspace(repo, repo / "kdb")})()
     got = tool(ctx, "links/link-2.md")
-    assert got["title"] == "Link 2" and got["text"].startswith("Link 2.") and got["quantities"]["length"]["value"] == 305
+    assert got["title"] == "Link 2" and got["text"].startswith("Link 2.") and got["quantities"]["length"]["value"] == 280
     with pytest.raises(ModelRetry, match="no page"):
         tool(ctx, "links/link-9.md")
 
