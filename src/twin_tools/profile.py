@@ -27,11 +27,14 @@ from . import units as U
 
 # page type: {quantity: the kind of unit it must have}, and the links it must have to other page types
 REQUIRED = {
-    "Joint": {"lower_limit": "angle", "upper_limit": "angle", "velocity_limit": "angular speed", "effort_limit": "torque"},
+    "Joint": {"lower_limit": "angle", "upper_limit": "angle", "velocity_limit": "angular speed", "effort_limit": "torque",
+              "dh_theta_offset": "angle", "dh_alpha": "angle", "dh_d": "length", "dh_a": "length"},
     "Material": {"density": "density"},
     "Gearbox": {"ratio": "ratio"},
+    "Gripper": {"jaw_stroke": "length", "jaw_force": "force", "jaw_speed": "speed"},
 }
-LINKS = {"Joint": {"parent": "Link", "child": "Link"}, "Link": {"material": "Material"}}
+LINKS = {"Joint": {"parent": "Link", "child": "Link"}, "Link": {"material": "Material"},
+         "Gripper": {"material": "Material"}}
 
 REF = re.compile(r"(/[\w./-]+\.md)#(\w+)")
 OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv,
