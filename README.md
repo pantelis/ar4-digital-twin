@@ -167,6 +167,15 @@ also checks each axis against the frames the six rows give. A joint with any oth
 checked. If any of `J1` to `J6` is missing, the full-chain check is skipped without a finding,
 and the summary says `kinematics pairs only`.
 
+## Train the skills
+
+Once your twin passes `twin-check`, you build the pipeline that trains the `pick` and `place`
+skills on it with PPO from rsl_rl, then chains them and judges the result. You train on your own
+GPU or on Colab. Your skills must meet the interface in `src/twin_tools/skill.py`, and the task
+constants are in `src/twin_tools/task.py`. The [pipeline guide](docs/pipeline-guide.md) covers
+each part, with the settings, rewards and rsl_rl configuration that trained working skills on the
+course's reference twin.
+
 ## Tools
 
 | Tool | What it does |
