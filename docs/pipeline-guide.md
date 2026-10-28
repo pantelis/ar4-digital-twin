@@ -58,9 +58,11 @@ each skill its reset, its success test and its precondition in the executor.
 ## Predicate checks on Newton state
 
 Each predicate is a function of the Newton state that returns one boolean per world. Treat the
-cube and each jaw as boxes. Give each jaw a frame at the center of its box, with x along its
-closing direction, so its inner face sits at x equal to its half extent. These definitions and
-tolerances worked on the reference twin:
+cube as a box. Treat each jaw as the box that bounds its collision shapes, including the shapes of
+any pad or finger welded to it. Give that box a frame on the jaw's body, with x along the jaw's
+closing direction, so the jaw's inner face sits at x equal to the box's half extent. If your jaw is
+one box with a face toward the cube, as the reference twin's is, the bounding box is the jaw itself.
+These definitions and tolerances worked on the reference twin:
 
 | Predicate | True when | Tolerances |
 |---|---|---|
@@ -71,6 +73,12 @@ tolerances worked on the reference twin:
 
 Measure heights from the cube's lowest corner, not its center, because a tilted cube sits lower
 than its center suggests. Write `in` as `inside` in Python, since `in` is a keyword.
+
+The course evaluation reads your twin's geometry this way too. It accepts collision shapes that
+are boxes, spheres, capsules, straight-sided cylinders, cones, ellipsoids and meshes, on the jaws
+and on the links. It stops with an error that names the shape for any other type, such as a
+barrel-sided cylinder, a plane or a height field. twin-check does not flag those, so keep your
+twin's collision shapes to the listed types. A shape that is only visual is not read.
 
 Put the predicates in one module and use it everywhere. The environment resets each world into an
 action's precondition with it and decides success with it. The executor refuses an action whose
@@ -175,12 +183,21 @@ came from a fixed grid of 3 y values and 2 gripper yaws, while pick ends whereve
 any yaw. Every handover had some joint at least 0.2 rad from the nearest grid pose.
 
 So sample place's start the way the cube is sampled. Draw the cube's x, y and yaw with
-`sample_placements`, as pick does, set the cube upright at that yaw, and put the grasp frame on it at
-a height between the floor above and 0.20 m. Turn the last joint so the jaws face the nearest pair
-of cube faces. Solving IK for every world at every reset is slow, so we solved it once on a coarse
-grid over the cube's x and y ranges and the handover heights, and interpolated between grid poses.
-Our poses landed within 2.5 mm of the target. A few low poses near the arm's base cannot be
-reached; draw those again. With these resets the best chain rose from 37% to 63%.
+`sample_placements`, as pick does, and set the cube upright at that yaw with the grasp frame at its
+center. Draw the grasp frame's height from the floor up to 0.20 m. The floor is where the cube's
+bottom sits 22 mm above the table, the 10 mm `holding` needs plus the 12 mm sag margin, so the
+grasp frame starts at 0.0345 m or higher. Turn the last joint so the jaws face the nearest pair of
+cube faces. Solving IK for every world at every reset is slow, so we solved it once on a coarse
+grid over the cube's x and y ranges and the heights, and interpolated between grid poses. Give the
+grid a row at the floor height: interpolation stops at the lowest row, and our grid once started
+at 0.04 m, so no start was drawn below it. Our poses landed within 2.5 mm of the target. A few
+low poses near the arm's base cannot be reached; draw those again.
+
+With these resets, drawn from 0.04 m, the best chain rose from 37% to 63%. Adding the floor row
+did not raise it further. Two more seeds trained from the floor finished between 8% and 40%
+chained, and the 63% skill is still the reference place skill. The floor row changes little in
+practice, because the 0.05 rad of joint noise already spreads each start by about 15 mm. Only
+about 1.5% of settled starts land within 3 mm of pick's median handover height.
 
 ### Overlaps and non-finite worlds
 
@@ -199,6 +216,11 @@ the 37 observations are the six joint positions and velocities, the jaw opening,
 position and quaternion, the cube's position and quaternion, the center of the box's bottom face
 and the last action, all raw and in the base frame. The seven actions are six arm values and one
 jaw value, each clipped to [-1, 1].
+
+The last action is the previous step's action after that clip. A trained policy's mean often
+leaves [-1, 1], so it can differ from your policy's raw output. The course evaluation
+feeds the clipped action back, so store the clipped one in your environment too. If you store
+the raw one, your skill trains on observations it never sees at grading.
 
 The arm actions are relative joint targets. Each target starts at the joint's position when the
 skill starts. At every control step it moves by `a * v_max / CONTROL_HZ`, where `v_max` is the
@@ -346,10 +368,11 @@ start requires. Give each skill up to 5 s. Count the worlds that end with the cu
 the gripper empty, and sort the failures by where they happened: pick timed out, cube lost in pick,
 cube dropped outside the box, and so on.
 
-Choose the place checkpoint by its chained score, not by its own success rate. Every place
-checkpoint we trained passed 0.97 on its own resets, but chained with the same pick (seed 3 at
-iteration 300, 89% handed over, 512 episodes) they finished between 31% and 63%. The best one
-dropped the cube outside the box in 18% of episodes and lost it during place in 9%. With the older
+Choose the place checkpoint by its chained score, not by its own success rate. The twelve place
+checkpoints we chained from full-range resets scored 0.95 to 0.99 on their own resets, where
+measured. Chained with the same pick (seed 3 at iteration 300, about 89% handed over, 512
+episodes), they finished between 8% and 63%. The best one dropped the cube outside the box in 18%
+of episodes and lost it during place in 9%. With the older
 grid resets the best chain was 37%, with 46% dropped outside the box. We do not yet know why
 checkpoints that look the same on place's own resets differ this much on pick's handovers.
 

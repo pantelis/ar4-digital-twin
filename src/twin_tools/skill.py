@@ -14,7 +14,8 @@ because the arm's base is welded at the origin. Quaternions are (x, y, z, w), th
     cube_pos     3  m       center of the cube
     cube_quat    4          orientation of the cube
     box_pos      3  m       center of the box's bottom face
-    last_action  7          the action given at the previous control step (zeros at the first step)
+    last_action  7          the action at the previous control step, after the clip to [-1, 1] below, so in
+                            [-1, 1] even when the skill gave more (zeros at the first step)
 
 Action, in the order of ACTION. The skill runs at CONTROL_HZ. Each value is first clipped to [-1, 1].
     arm   6   each value moves its joint's position target. The targets start at the arm's joint positions when the
