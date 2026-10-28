@@ -170,11 +170,17 @@ why. Our first place resets started the grasp frame 0.10 to 0.20 m above the tab
 pick finishes as soon as the cube clears the table, with the grasp frame 0.027 to 0.148 m up
 (median 0.031 m). Place had never seen that, and only 12% of chained episodes finished. Starting
 place resets as low as the cube can be held (grasp frame from 0.0225 m, plus a 12 mm margin for
-the cube's sag) raised the chain to 34%. The rest of the gap is the arm pose. Our place resets came
-from a fixed grid of 3 y values and 2 gripper yaws, while pick ends wherever the cube was, at any
-yaw. Every handover had some joint at least 0.2 rad from the nearest grid pose. Sample place's
-start the way the cube is sampled (x, y and yaw from the cube's ranges, solved by IK) rather than
-from a grid. We have not yet trained that version.
+the cube's sag) raised the chain to 34%. The rest of the gap was the arm pose. Those place resets
+came from a fixed grid of 3 y values and 2 gripper yaws, while pick ends wherever the cube was, at
+any yaw. Every handover had some joint at least 0.2 rad from the nearest grid pose.
+
+So sample place's start the way the cube is sampled. Draw the cube's x, y and yaw with
+`sample_placements`, as pick does, set the cube upright at that yaw, and put the grasp frame on it at
+a height between the floor above and 0.20 m. Turn the last joint so the jaws face the nearest pair
+of cube faces. Solving IK for every world at every reset is slow, so we solved it once on a coarse
+grid over the cube's x and y ranges and the handover heights, and interpolated between grid poses.
+Our poses landed within 2.5 mm of the target. A few low poses near the arm's base cannot be
+reached; draw those again. With these resets the best chain rose from 37% to 63%.
 
 ### Overlaps and non-finite worlds
 
@@ -338,11 +344,14 @@ pick until `holding` has lasted `HOLD_S`, and hand each world to place at once. 
 restart the arm targets at the current joint positions and the last action at zero, as a skill's
 start requires. Give each skill up to 5 s. Count the worlds that end with the cube in the box and
 the gripper empty, and sort the failures by where they happened: pick timed out, cube lost in pick,
-cube dropped outside the box, and so on. With our best skills (pick seed 3 at iteration 300, place
-seed 2 at iteration 150), pick handed over in 89% of 512 episodes and the chain finished in 37%.
-Place dropped the cube outside the box in 46% of episodes, even though it succeeds in 0.99 of its
-own resets. The cube positions pick hands over are wider than the ones place trained from, so cover
-pick's whole range of cube positions in place's resets.
+cube dropped outside the box, and so on.
+
+Choose the place checkpoint by its chained score, not by its own success rate. Every place
+checkpoint we trained passed 0.97 on its own resets, but chained with the same pick (seed 3 at
+iteration 300, 89% handed over, 512 episodes) they finished between 31% and 63%. The best one
+dropped the cube outside the box in 18% of episodes and lost it during place in 9%. With the older
+grid resets the best chain was 37%, with 46% dropped outside the box. We do not yet know why
+checkpoints that look the same on place's own resets differ this much on pick's handovers.
 
 ## Mistakes we made
 
@@ -353,5 +362,6 @@ pick's whole range of cube positions in place's resets.
 - Twin self-collision on convex hulls pushed the cube out of the jaws; filter twin-twin contacts.
 - A 2e-3 s time step dropped the cube while every value stayed finite; check the slip, not just finiteness.
 - Place trained from states pick never hands over; cover pick's end heights and poses in place's resets.
+- A place skill at 0.99 on its own resets chained at 37%; score place checkpoints on pick's handovers.
 - The last checkpoint of a good pick run scored 0.10 to 0.16 against 0.86 to 0.90 for its best; keep and export the best.
 - One good pick run looked like a good configuration, and two of four seeds never passed 0.40; train a second seed before you trust a number.
