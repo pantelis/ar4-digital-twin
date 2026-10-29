@@ -18,6 +18,7 @@ from __future__ import annotations
 import ast
 import operator
 import re
+from pathlib import Path
 
 from kdb_tools import bundle as B
 from kdb_tools.profile import Profile
@@ -156,4 +157,36 @@ def check_page(b: B.Bundle, page: B.Page, report: Report) -> None:
             report.error("ar4.link", page.rel, f"{field} is '{fm[field]}'; it must be the path of a {wanted} page")
 
 
-PROFILE = Profile("ar4", check_page=check_page)
+RUNS = "https://kdb.aegean.ai/ar4/runs/classes/"
+ROUND_TOLERANCE = 1e-9
+
+
+def table_of(o, slug: str) -> str | None:
+    k = o.classes.get(RUNS + slug)
+    return k.binding.table if k is not None and k.binding is not None else None
+
+
+def has_table(lake, table: str) -> bool:
+    return bool(lake.con.execute(
+        "SELECT count(*) FROM information_schema.tables WHERE table_catalog = 'lake' "
+        "AND table_schema = 'main' AND table_name = ?", [table]).fetchone()[0])
+
+
+def check_rows(o, lake, report: Report) -> None:
+    """An evaluation's episodes equals its count of episode rows, and its success_rate is their mean verdict."""
+    evaluations, episodes = table_of(o, "evaluation"), table_of(o, "episode")
+    if not (evaluations and episodes and has_table(lake, evaluations) and has_table(lake, episodes)):
+        return
+    rows = lake.con.execute(
+        f'SELECT e.iri, e.episodes, e.success_rate, count(p.iri), avg(CASE WHEN p.verdict THEN 1.0 ELSE 0.0 END) '
+        f'FROM "{evaluations}" e LEFT JOIN "{episodes}" p ON p.evaluation = e.iri '
+        f'GROUP BY e.iri, e.episodes, e.success_rate ORDER BY e.iri').fetchall()
+    for iri, stated, rate, count, mean in rows:
+        where = f"{evaluations}/{iri}"
+        if stated is not None and stated != count:
+            report.error("ar4.round", where, f"episodes is {stated}, but the table holds {count} episode rows for it")
+        if rate is not None and count and abs(rate - mean) > ROUND_TOLERANCE:
+            report.error("ar4.round", where, f"success_rate is {rate}, but the mean verdict of its episodes is {mean}")
+
+
+PROFILE = Profile("ar4", check_page=check_page, seeds=Path(__file__).parent / "seeds", check_rows=check_rows)

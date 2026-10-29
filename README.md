@@ -176,6 +176,39 @@ constants are in `src/twin_tools/task.py`. The [pipeline guide](docs/pipeline-gu
 each part, with the settings, rewards and rsl_rl configuration that trained working skills on the
 course's reference twin.
 
+## How the course grades
+
+The course grades your twin and your two skills together. It builds your twin from `twin/build.py`,
+loads your `pick` and `place` skills, and runs them in 512 worlds through the course's
+pick-and-place environment. Your grade is the fraction of those episodes that succeed. An episode
+succeeds when the cube rests in the box and the gripper is empty, and both stay true for `HOLD_S`
+(0.5 s, 25 control steps in a row).
+
+The plan is fixed: `pick`, then `place`. The grader runs `pick` until the cube has been held for
+`HOLD_S`, hands the world to `place` at once, and restarts the arm targets and the last action as a
+skill's start requires. Each action gets 5 s. A skill that has not reached its goal by then has
+timed out, and the episode fails. So does an episode that loses the cube beyond 1 m of the base or
+reaches a non-finite world. The judge decides every episode from the logged state, never from a
+claim the executor makes.
+
+You can estimate your grade with the practice seed. The constants are in `src/twin_tools/task.py`:
+`EVAL_EPISODES` is 512, `ACTION_TIMEOUT_S` is 5.0, `HOLD_S` is 0.5 and `PRACTICE_SEED` is 30000.
+Chain your skills as the [pipeline guide](docs/pipeline-guide.md) describes, and use `PRACTICE_SEED`
+wherever the guide asks for a seed your training never used. Draw 512 episodes from it. Your chain
+is not the course's grader, so the estimate will not match your grade exactly.
+
+The course trained its own skills on other seeds. Keep `PRACTICE_SEED` out of your training seeds as
+well. A skill that trained on the practice worlds gives you an estimate that is too high.
+
+The practice seed does not decide your grade. The course evaluates with a different seed that it
+does not publish, so a skill that only works on the practice worlds loses points. The speed and
+self-collision flags in a round's report are informational. They do not change a verdict or the
+success rate.
+
+The course refuses to grade a submission, and says why, in two cases. The first is a twin that fails
+`twin-check`. The second is a skill file that does not fit the interface, which `check_skill`
+reports. Run both on your submission before you hand it in.
+
 ## Tools
 
 | Tool | What it does |
