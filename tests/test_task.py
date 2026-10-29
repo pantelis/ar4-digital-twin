@@ -24,3 +24,9 @@ def test_placements_stay_in_range_and_apart():
     outside = np.maximum(np.abs(cube[:, :2] - box) - half, 0.0)
     gap = np.linalg.norm(outside, axis=1) - task.CUBE_EDGE / math.sqrt(2)
     assert gap.min() >= CLEARANCE
+
+
+def test_the_evaluation_constants():
+    assert task.EVAL_EPISODES == 512
+    assert task.ACTION_TIMEOUT_S == 5.0
+    assert task.PRACTICE_SEED == 30_000

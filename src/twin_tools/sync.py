@@ -14,6 +14,9 @@ installed, such as the project container. The rules:
     sync.export  the STL's volume differs from the recomputed solid's by more than 0.5%
     sync.frame   in the assembly, a link's placement differs from its DH frame at q = 0
     sync.load    a document that FreeCAD cannot open or recompute, or freecadcmd missing
+    sync.gui     a document anywhere under cad, cad/gripper/ included, saved without the GUI (no
+                 GuiDocument.xml), or an Assembly joint with no view provider or hidden (twin_tools.guicheck);
+                 twin-guisave fixes it
 
 The kDB spreadsheet is the sheet labeled kDB. Row r holds the quantity's reference in A, such as
 /links/link-2.md#length, its value in B with an alias, and the value's unit in C. The assembly gets
@@ -42,7 +45,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from . import dh
+from . import dh, guicheck
 from . import kdb as K
 from . import units as U
 from .check import Report
@@ -197,6 +200,7 @@ def _sync(cad: Path, kdb: Path, report: Report) -> Report:
     docs = sorted(cad.glob("*.FCStd"))
     stems = [d.stem for d in docs if d.stem != ASSEMBLY]
     report.summary["documents"] = len(docs)
+    guicheck.check_all(cad, report, top_level_loaded=True)
     for doc in docs:
         try:
             dump = _dump(doc)

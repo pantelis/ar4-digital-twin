@@ -22,6 +22,11 @@ BOX_X = (0.25, 0.35)       # m
 BOX_ABS_Y = (0.15, 0.25)   # m
 HOLD_S = 0.5               # s a skill must hold its success condition to count
 
+# How a round of evaluation is run
+EVAL_EPISODES = 512        # episodes per round; stage 3 measured every skill on 512
+ACTION_TIMEOUT_S = 5.0     # s a skill gets per action, the episode length it trained with
+PRACTICE_SEED = 30_000     # the seed students practice on, apart from the training seeds and from 10 000 and 20 000
+
 
 def sample_placements(rng, n: int):
     """n cube poses (x, y, yaw) and n box centers (x, y), the box on the side opposite the cube's y.

@@ -126,6 +126,52 @@ def test_values_typed_in_rather_than_read_from_the_kdb_are_untraced():
     assert all(k in j2.message for k in ("lower limit", "upper limit", "effort limit", "velocity limit"))
 
 
+def test_an_unused_read_does_not_trace_a_typed_value():
+    # each typed number equals a kDB read the build made, but the builder never received that read
+    report = check(FIX / "twin_unused_reads.py", seconds=0, kdb=FIX / "kdb", grasp=False)
+    assert rules(report) == [("trace", "J2"), ("trace", "upper_arm")]
+    j2 = next(f for f in report.findings if f.path == "J2")
+    assert "effort limit 40" in j2.message and "velocity limit 2" in j2.message
+    assert "lower limit" not in j2.message and "upper limit" not in j2.message
+    upper = next(f for f in report.findings if f.path == "upper_arm")
+    assert "shape density 2700" in upper.message
+
+
+def test_a_read_from_another_joints_page_is_untraced():
+    # J3's effort limit is a torque read from the kDB, but J2's must come from joints/j2.md
+    report = check(FIX / "twin_j3_for_j2.py", seconds=0, kdb=FIX / "kdb", grasp=False)
+    assert rules(report) == [("trace", "J2")]
+    (f,) = report.findings
+    assert "effort limit 20" in f.message and "joints/j3.md effort_limit" in f.message and "joints/j2.md effort_limit" in f.message
+
+
+def test_a_forged_read_is_untraced():
+    # the forged read claims joints/j2.md effort_limit gave 400 N m; the page says 40 N m
+    report = check(FIX / "twin_forged_read.py", seconds=0, kdb=FIX / "kdb", grasp=False)
+    assert rules(report) == [("trace", "J2")]
+    assert "effort limit 400" in report.findings[0].message
+
+
+def test_a_link_density_must_come_from_its_material(tmp_path):
+    """With links/<body label>.md in the kDB, a shape density on that body must be its Material page's density."""
+    from twin_tools.check import _body_expects
+    from twin_tools.kdb import Read
+
+    (tmp_path / "links").mkdir()
+    (tmp_path / "links" / "upper_arm.md").write_text("---\ntype: Link\nmaterial: ../materials/aluminum.md\n---\n")
+    kdb.use(tmp_path)
+    try:
+        ok, says = _body_expects("upper_arm", "density")
+        other, _ = _body_expects("forearm", "density")  # no link page: any density quantity
+    finally:
+        kdb.use(None)
+    assert ok(Read("materials/aluminum.md", "density", 2.7, "g/cm^3", 2700.0))
+    assert not ok(Read("materials/petg.md", "density", 1.27, "g/cm^3", 1270.0))
+    assert "materials/aluminum.md density" in says
+    assert other(Read("materials/petg.md", "density", 1.27, "g/cm^3", 1270.0))
+    assert not other(Read("materials/petg.md", "mass", 1.0, "kg", 1.0))
+
+
 def test_newtons_default_density_is_untraced():
     report = check(FIX / "twin_default_density.py", seconds=0, kdb=FIX / "kdb")
     assert rules(report) == [("trace", "upper_arm")]
@@ -387,3 +433,4 @@ def test_penetration_is_how_far_a_jaw_passes_the_cubes_near_face():
     diag = Solid(G.SPHERE, (0.004, 0.0, 0.0), (0.006, 0.006, 0.0) + still)
     ball = Solid(G.SPHERE, (0.01, 0.0, 0.0), (0.0, 0.0, 0.0) + still)
     assert _penetration(d, [diag], ball) == pytest.approx(0.014 - 0.006 * math.sqrt(2))
+

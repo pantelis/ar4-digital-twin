@@ -29,6 +29,16 @@ def test_every_read_is_recorded():
     assert kdb.reads()[-1].si == pytest.approx(-1.2)
 
 
+def test_a_read_is_bound_to_the_object_si_returned():
+    value = kdb.si("joints/j2.md", "effort_limit")
+    again = kdb.si("joints/j2.md", "effort_limit")
+    assert type(value) is float and value == again == 40.0
+    assert kdb.read_of(value) is kdb.reads()[-2] and kdb.read_of(again) is kdb.reads()[-1]
+    # identity, not equality: a typed number or one computed from a read is not the read
+    assert kdb.read_of(40.0) is None and kdb.read_of(value * 1.0) is None and kdb.read_of(-(-value)) is None
+    assert kdb.read_of(float(value)) is kdb.reads()[-2]  # float() of a float is the same object
+
+
 @pytest.mark.parametrize("page, name, says", [("joints/j9.md", "upper_limit", "no page"),
                                                ("joints/j2.md", "torque", "lower_limit"),
                                                ("../outside.md", "x", "no page")])

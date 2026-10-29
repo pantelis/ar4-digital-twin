@@ -12,10 +12,19 @@ fixed to the world, and returns the grasp frame. The checks:
     effort-limit    every such joint has an effort limit (default 1e6)
     velocity-limit  every such joint has a velocity limit (default 1e6)
     trace           every joint limit, effort limit and velocity limit, every shape density and
-                    every link mass set in build() was read from the kDB with twin_tools.kdb.si,
-                    from a quantity of the right kind: an angle, a torque and an angular speed for a
-                    revolute joint, a length, a force and a speed for a prismatic one, a density for a
-                    shape density and a mass for a link mass (a jaw's closed limit of 0 needs no page)
+                    every link mass set in build() is the float object twin_tools.kdb.si returned,
+                    passed to the builder unchanged, from a quantity of the right kind: an angle, a torque and an
+                    angular speed for a revolute joint, a length, a force and a speed for a prismatic
+                    one, a density for a shape density and a mass for a link mass (a jaw's closed limit
+                    of 0 needs no page). The check looks at the object the builder received, so a typed
+                    number is untraced even when a read returned the same number, and a value computed
+                    from reads (a new float) is untraced: put the formula on a kDB page and read it.
+                    The read must also come from the page and quantity the value belongs to: J<n>'s
+                    values from joints/j<n>.md (lower_limit, upper_limit, effort_limit,
+                    velocity_limit), the jaws' from a Gripper page (jaw_stroke, jaw_force, jaw_speed),
+                    a density on the body labeled like links/<label>.md from that link's Material page
+                    (see _joint_expects and _body_expects). Each read is checked against its page on
+                    disk, so a read forged into twin_tools.kdb's registry with another value fails
     gripper         build_gripper() exists, both models have prismatic jaws JAW1 and JAW2, the
                     standalone gripper passes the checks above (its findings name it, as in
                     "JAW1 (build_gripper)"), and its jaw limits, effort limits and velocity limits
@@ -49,11 +58,15 @@ import importlib.util
 import inspect
 import json
 import math
+import posixpath
+import re
 import sys
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import NamedTuple
+
+import yaml
 
 from . import kdb as K
 from . import units as U
@@ -107,13 +120,15 @@ def _load(path: Path) -> tuple[Callable, Callable | None]:
     return build, (build_gripper if callable(build_gripper) else None)
 
 
-def _record_masses(builder) -> dict[int, dict[str, set[float]]]:
-    """Wrap the builder's add_shape_* and add_link/add_body methods to record, per body, the densities of
-    its shapes and any mass set directly. Newton does not keep shape densities in the finalized model."""
-    seen: dict[int, dict[str, set[float]]] = {}
+def _record_masses(builder) -> dict[int, dict[str, list]]:
+    """Wrap the builder's add_shape_* and add_link/add_body methods to record, per body, the density objects of
+    its shapes and any mass object set directly, as the builder received them (see kdb.read_of).
+    Newton does not keep shape densities in the finalized model. Lists, not sets: a typed 2700.0 equals a read
+    2700.0, and a set would keep only one of them."""
+    seen: dict[int, dict[str, list]] = {}
 
     def entry(body):
-        return seen.setdefault(int(body), {"density": set(), "mass": set()})
+        return seen.setdefault(int(body), {"density": [], "mass": []})
 
     def wrap(name, orig):
         sig = inspect.signature(orig)
@@ -128,9 +143,9 @@ def _record_masses(builder) -> dict[int, dict[str, set[float]]]:
             if name.startswith("add_shape") and isinstance(bound.get("body"), int) and bound["body"] >= 0:
                 cfg = bound.get("cfg") or builder.default_shape_cfg
                 if getattr(cfg, "density", 0) > 0:
-                    entry(bound["body"])["density"].add(float(cfg.density))
+                    entry(bound["body"])["density"].append(cfg.density)
             elif name in ("add_link", "add_body") and isinstance(out, int) and (bound.get("mass") or 0) > 0:
-                entry(out)["mass"].add(float(bound["mass"]))
+                entry(out)["mass"].append(bound["mass"])
             return out
 
         return recorded
@@ -143,21 +158,121 @@ def _record_masses(builder) -> dict[int, dict[str, set[float]]]:
     return seen
 
 
-def _matches(value: float, reads) -> list:
-    """The kDB reads whose SI value equals value."""
-    return [r for r in reads if math.isclose(value, r.si, rel_tol=TRACE_TOLERANCE, abs_tol=1e-9)]
+# The builder's per-dof lists twin-check reads the given objects from, by the name a finding uses.
+_DOF_LISTS = {"lower limit": "joint_limit_lower", "upper limit": "joint_limit_upper",
+              "effort limit": "joint_effort_limit", "velocity limit": "joint_velocity_limit"}
 
 
-def _untraced(what: str, value: float, unit: str, kind: str, reads) -> str | None:
-    """None when value was read from a kDB quantity of this kind, else what the finding says about it."""
-    found = _matches(value, reads)
-    if any(U.kind(r.unit) == kind for r in found):
+def _given(builder) -> dict[str, list]:
+    """The objects the builder holds for each dof's limits, effort limit and velocity limit, taken before finalize
+    turns them into float32 arrays. Each is the object si returned when the twin passed it unchanged, however the
+    joint was added (add_joint_revolute, a JointDofConfig, add_joint) or changed afterwards."""
+    return {what: list(getattr(builder, name)) for what, name in _DOF_LISTS.items()}
+
+
+class _Trace(NamedTuple):
+    """What the trace check works from: the kDB root, fixed before the twin's module runs, and the reads of the
+    build, taken right after it."""
+    root: Path
+    reads: tuple
+
+
+def _frontmatter(root: Path, rel: str) -> dict | None:
+    """A page's frontmatter, read from disk here and not through twin_tools.kdb, or None."""
+    path = (root / rel.lstrip("/")).resolve()
+    if not path.is_relative_to(root) or not path.is_file():
         return None
+    text = path.read_text(encoding="utf-8")
+    end = text.find("\n---", 3)
+    if not text.startswith("---\n") or end == -1:
+        return None
+    try:
+        fm = yaml.safe_load(text[4:end])
+    except yaml.YAMLError:
+        return None
+    return fm if isinstance(fm, dict) else None
+
+
+def _on_disk(root: Path, read) -> bool:
+    """The read says what its page on disk says: the same value and unit, and the SI value si() gives for them."""
+    q = ((_frontmatter(root, read.page) or {}).get("quantities") or {}).get(read.name)
+    if not isinstance(q, dict) or q.get("unit") != read.unit or q.get("unit") not in U.UNITS:
+        return False
+    value = q.get("value")
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or float(value) != read.value:
+        return False
+    return float(U.to_si(float(value), read.unit)) == read.si
+
+
+def _page_type(root: Path, rel: str):
+    return (_frontmatter(root, rel) or {}).get("type")
+
+
+# The quantity a joint's value must be read from: by default the field's own name on the joint's page, and for
+# the jaws the Gripper page's jaw quantities. A jaw's lower limit is its closed opening, 0, and needs no read.
+_JOINT_QUANTITY = {"lower limit": "lower_limit", "upper limit": "upper_limit", "effort limit": "effort_limit",
+                   "velocity limit": "velocity_limit"}
+_JAW_QUANTITY = {"upper limit": "jaw_stroke", "effort limit": "jaw_force", "velocity limit": "jaw_speed"}
+
+
+def _joint_expects(label: str, what: str, root: Path | None = None):
+    """(test, description) of the read a joint's value must come from. J<n> reads joints/j<n>.md, the quantity named
+    after the field (lower_limit, upper_limit, effort_limit, velocity_limit). JAW1 and JAW2 read jaw_stroke,
+    jaw_force and jaw_speed from a Gripper page. Any other joint reads the field's quantity from a Joint page."""
+    root = Path(root or K.root()).resolve()
+    if label in JAWS:
+        name = _JAW_QUANTITY.get(what)
+        if name is None:
+            return (lambda r: _page_type(root, r.page) == "Gripper"), "a quantity on a Gripper page"
+        return (lambda r: r.name == name and _page_type(root, r.page) == "Gripper"), f"{name} on a Gripper page"
+    name = _JOINT_QUANTITY[what]
+    m = re.fullmatch(r"J([1-9][0-9]*)", label)
+    if m:
+        page = f"joints/j{m[1]}.md"
+        return (lambda r: posixpath.normpath(r.page) == page and r.name == name), f"{page} {name}"
+    return (lambda r: r.name == name and _page_type(root, r.page) == "Joint"), f"{name} on a Joint page"
+
+
+def _body_expects(label: str, what: str, root: Path | None = None):
+    """(test, description) of the read a body's shape density or mass must come from. When links/<label>.md is in
+    the kDB and names a material, a shape density on that body is that Material page's density, or a quantity of
+    the link page whose name ends in density. Any other body's density is a quantity named density or ending in
+    _density, and a mass is one named mass or ending in _mass."""
+    root = Path(root or K.root()).resolve()
+    if what == "density":
+        link = f"links/{label}.md"
+        material = (_frontmatter(root, link) or {}).get("material")
+        if isinstance(material, str):
+            # A reference starting with / is relative to the kDB root, as kdb.si() records pages; else to links/.
+            if material.startswith("/"):
+                page = posixpath.normpath(material.lstrip("/"))
+            else:
+                page = posixpath.normpath(posixpath.join("links", material))
+            return ((lambda r: (posixpath.normpath(r.page) == page and r.name == "density")
+                     or (posixpath.normpath(r.page) == link and r.name.endswith("density"))),
+                    f"{page} density (the Material of {link})")
+        return (lambda r: r.name == "density" or r.name.endswith("_density")), "a density quantity"
+    return (lambda r: r.name == "mass" or r.name.endswith("_mass")), "a mass quantity"
+
+
+def _untraced(what: str, value: float, unit: str, kind: str, given, ctx: _Trace, expects) -> str | None:
+    """None when given, the object the builder received for value, is the object one of this build's reads returned,
+    the read says what its page on disk says, it comes from a quantity of this kind on the page and quantity expects
+    names, and it equals value. Else what the finding says about it."""
+    read = next((r for r in ctx.reads if r.si is given), None)
     text = f"{what} {value:.6g}{unit}"
-    if found:  # a kDB number, but of another kind, such as a density used as a force
-        r = found[0]
-        text += f" (read from {r.page} {r.name}, {_a(U.kind(r.unit))}, where {_a(kind)} belongs)"
-    return text
+    if read is None:
+        return text
+    if U.kind(read.unit) != kind:  # a kDB read, but of another kind, such as a density used as a force
+        return text + f" (read from {read.page} {read.name}, {_a(U.kind(read.unit))}, where {_a(kind)} belongs)"
+    if not _on_disk(ctx.root, read):
+        return text + f" (its read of {read.page} {read.name} is not what that page says)"
+    test, wanted = expects
+    if not test(read):
+        return text + f" (read from {read.page} {read.name}, where {wanted} belongs)"
+    if not math.isclose(value, read.si, rel_tol=TRACE_TOLERANCE, abs_tol=1e-9):
+        return text
+    return None
 
 
 def _a(word: str) -> str:
@@ -171,10 +286,11 @@ _JOINT_KINDS = {
 }
 
 
-def _trace(model, masses, report, suffix=""):
+def _trace(model, masses, given, ctx: _Trace, report, suffix=""):
     import newton
 
-    reads = K.reads()
+    if any(len(objects) != model.joint_dof_count for objects in given.values()):
+        given = {what: [None] * model.joint_dof_count for what in given}  # cannot pair them, so nothing is traced
     types, qd_start = model.joint_type.numpy(), model.joint_qd_start.numpy()
     arrays = {"lower limit": model.joint_limit_lower.numpy(), "upper limit": model.joint_limit_upper.numpy(),
               "effort limit": model.joint_effort_limit.numpy(), "velocity limit": model.joint_velocity_limit.numpy()}
@@ -190,18 +306,31 @@ def _trace(model, masses, report, suffix=""):
                 v = float(values[d])
                 unset = abs(v) >= UNSET_LIMIT if is_limit else not 0 < v < UNSET_RATE
                 closed_jaw = label in JAWS and what == "lower limit" and v == 0.0  # a jaw's coordinate is its opening
-                text = None if unset or closed_jaw else _untraced(what, v, unit, kind, reads)
+                text = None if unset or closed_jaw else _untraced(what, v, unit, kind, given[what][d], ctx,
+                                                                   _joint_expects(label, what, ctx.root))
                 if text:
                     untraced.append(text)
         if untraced:
             report.error("trace", label + suffix, f"{', '.join(untraced)} not read from the kDB; read each with twin_tools.kdb.si")
     for body, found in sorted(masses.items()):
         label = model.body_label[body] if body < len(model.body_label) else str(body)
-        untraced = [(text + (" (Newton's default)" if v == 1000.0 else ""))
-                    for v in sorted(found["density"]) if (text := _untraced("shape density", v, " kg/m^3", "density", reads))]
-        untraced += [text for v in sorted(found["mass"]) if (text := _untraced("mass", v, " kg", "mass", reads))]
+        density, mass = _body_expects(label, "density", ctx.root), _body_expects(label, "mass", ctx.root)
+        untraced = [(text + (" (Newton's default)" if float(g) == 1000.0 else "")) for g in _distinct(found["density"])
+                    if (text := _untraced("shape density", float(g), " kg/m^3", "density", g, ctx, density))]
+        untraced += [text for g in _distinct(found["mass"])
+                     if (text := _untraced("mass", float(g), " kg", "mass", g, ctx, mass))]
+        untraced = list(dict.fromkeys(untraced))  # one number typed for several shapes is one finding
         if untraced:
             report.error("trace", label + suffix, f"{', '.join(untraced)} not read from the kDB; read each with twin_tools.kdb.si")
+
+
+def _distinct(objects: list) -> list:
+    """objects sorted by value, each object once."""
+    out = []
+    for g in sorted(objects, key=float):
+        if not any(o is g for o in out):
+            out.append(g)
+    return out
 
 
 def _check_values(model, report, suffix=""):
@@ -341,7 +470,7 @@ def _jaws(model) -> dict[str, dict[str, float]]:
             if label in JAWS and types[j] == newton.JointType.PRISMATIC}
 
 
-def _gripper(path, model, build_gripper, device, trace, report):
+def _gripper(path, model, build_gripper, device, trace, report, root: Path):
     """Build the gripper alone, check it like the arm, and compare its jaws with the arm's."""
     import newton
 
@@ -355,6 +484,7 @@ def _gripper(path, model, build_gripper, device, trace, report):
         builder = newton.ModelBuilder()
         masses = _record_masses(builder)
         build_gripper(builder)
+        given, reads = _given(builder), K.reads()
         alone = builder.finalize(device=device)
     except Exception as e:  # as in check(), a failure in the student's module is a finding
         report.error("gripper", path.name, f"build_gripper() failed: {type(e).__name__}: {e}")
@@ -364,8 +494,8 @@ def _gripper(path, model, build_gripper, device, trace, report):
         return
     _check_values(alone, report, STANDALONE)
     if trace:
-        _trace(alone, masses, report, STANDALONE)
-        report.summary["kdb_reads"] = report.summary.get("kdb_reads", 0) + len(K.reads())
+        _trace(alone, masses, given, _Trace(root, reads), report, STANDALONE)
+        report.summary["kdb_reads"] = report.summary.get("kdb_reads", 0) + len(reads)
     arm, own = _jaws(model), _jaws(alone)
     names = {"lower": "lower limit", "upper": "upper limit", "effort": "effort limit", "velocity": "velocity limit"}
     for jaw in JAWS:
@@ -720,11 +850,13 @@ def check(path: Path, seconds: float = 1.0, device: str = "cpu", kdb: Path | Non
     path, report = Path(path), Report()
     K.use(kdb)
     K.clear()
+    root = K.root().resolve()  # fixed before the twin's module runs
     try:
         build, build_gripper = _load(path)
         builder = newton.ModelBuilder()
         masses = _record_masses(builder)
         build(builder)
+        given, reads = _given(builder), K.reads()
         model = builder.finalize(device=device)
     except Exception as e:  # any failure in the student's module is a finding, not a crash
         report.error("build", path.name, f"{type(e).__name__}: {e}")
@@ -732,10 +864,10 @@ def check(path: Path, seconds: float = 1.0, device: str = "cpu", kdb: Path | Non
     report.summary.update(bodies=model.body_count, joints=model.joint_count, dofs=model.joint_dof_count)
     limited = _check_values(model, report)
     if trace:
-        _trace(model, masses, report)
-        report.summary["kdb_reads"] = len(K.reads())
+        _trace(model, masses, given, _Trace(root, reads), report)
+        report.summary["kdb_reads"] = len(reads)
     _kinematics(path, model, report)
-    _gripper(path, model, build_gripper, device, trace, report)
+    _gripper(path, model, build_gripper, device, trace, report, root)
     if not report.findings and seconds > 0:
         _drop(model, limited, seconds, report)
     if not report.findings and grasp:

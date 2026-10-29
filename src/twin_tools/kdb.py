@@ -4,8 +4,18 @@
     upper = si("joints/j2.md", "upper_limit")   # 90 deg on the page, 1.5708 rad here
 
 The kDB is the directory kdb/ under the current directory, or the one twin-check --kdb or
-TWIN_KDB names. Every value read is recorded; twin-check compares the masses, densities and
-joint limits in the Newton model with these reads and reports any value that was typed in.
+TWIN_KDB names. Every read is recorded with the float object si() returned. twin-check looks at
+the very object the builder received for each mass, density and joint limit, and traces it only
+when it is the object a read returned (read_of). So a typed number is untraced even when some read
+returned the same number. An operation that computes a value, such as a sum, a product or a
+negation, makes a new float, so a value computed from reads is not a read: state it on a page as a
+formula quantity and read that instead. A few operations hand back the same object, such as +x,
+float(x), min(x, y) or max(x, y). They keep the read's own number, so that does no harm. si()
+returns a plain float, so Warp and NumPy take it as they take any number.
+
+The reads live in a private registry. twin-check does not trust it alone: before it traces a value
+to a read, it reads that page from disk again, and it checks that the read comes from the page and
+quantity the value belongs to.
 """
 
 from __future__ import annotations
@@ -32,8 +42,17 @@ class Read:
     si: float
 
 
+class _Registry:
+    """The reads of the current build, in order. Private: twin-check re-reads every read it relies on from disk."""
+
+    __slots__ = ("_items",)
+
+    def __init__(self):
+        self._items: list[Read] = []
+
+
 _root: Path | None = None
-_reads: list[Read] = []
+_registry = _Registry()
 
 
 def use(root: Path | str | None) -> None:
@@ -46,12 +65,19 @@ def root() -> Path:
     return _root or Path(os.environ.get("TWIN_KDB", "kdb"))
 
 
-def reads() -> list[Read]:
-    return list(_reads)
+def reads() -> tuple[Read, ...]:
+    """A snapshot of the reads so far."""
+    return tuple(_registry._items)
+
+
+def read_of(value) -> Read | None:
+    """The read whose si() call returned this very object, or None. Identity, not equality: a typed 40.0 is not
+    the 40.0 a read returned, and neither is any number computed from a read."""
+    return next((r for r in reversed(_registry._items) if r.si is value), None)
 
 
 def clear() -> None:
-    _reads.clear()
+    _registry._items.clear()
 
 
 def page(rel: str) -> tuple[dict, str]:
@@ -74,7 +100,8 @@ def quantities(rel: str) -> dict:
 
 
 def si(page: str, name: str) -> float:
-    """The quantity's value converted to SI units (rad, rad/s, N m, kg, m, kg/m^3), recorded for twin-check."""
+    """The quantity's value converted to SI units (rad, rad/s, N m, kg, m, kg/m^3), recorded for twin-check.
+    Pass the float it returns to the builder unchanged: twin-check traces that object, not its number."""
     found = quantities(page)
     q = found.get(name)
     if not isinstance(q, dict):
@@ -82,6 +109,6 @@ def si(page: str, name: str) -> float:
     value, unit = q.get("value"), q.get("unit")
     if not isinstance(value, (int, float)) or isinstance(value, bool) or unit not in U.UNITS:
         raise KdbError(f"{page} quantity {name} needs a number value and a known unit; run okf-validate")
-    out = U.to_si(float(value), unit)
-    _reads.append(Read(page.lstrip("/"), name, float(value), unit, out))
+    out = float(U.to_si(float(value), unit)) + 0.0  # a new float object for every call, so read_of tells reads apart
+    _registry._items.append(Read(page.lstrip("/"), name, float(value), unit, out))
     return out
