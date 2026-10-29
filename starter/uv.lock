@@ -47,7 +47,7 @@ wheels = [
 [[package]]
 name = "ar4-twin-tools"
 version = "0.1.0"
-source = { git = "https://github.com/pantelis/ar4-digital-twin?branch=stage-4#704c9a07d6a62f5e25d6cccc399ca57b30d3e1a1" }
+source = { git = "https://github.com/pantelis/ar4-digital-twin?branch=main#6e890b99c0d96b77a8b79003b86a34994d20e151" }
 dependencies = [
     { name = "kdb-tools" },
     { name = "pyyaml" },
@@ -2064,7 +2064,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ar4-twin-tools", git = "https://github.com/pantelis/ar4-digital-twin?branch=stage-4" },
+    { name = "ar4-twin-tools", git = "https://github.com/pantelis/ar4-digital-twin?branch=main" },
     { name = "kdb-tools", extras = ["agent"], git = "https://github.com/aegean-ai/kdb-tools?tag=v0.5.1" },
     { name = "pydantic-ai-slim", extras = ["openai", "mcp"], specifier = "==2.58.0" },
 ]
