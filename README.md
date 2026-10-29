@@ -8,7 +8,8 @@ has to pass the checks in this repository.
 
 The [project page](https://aegean.ai/aiml-common/projects/robotics/ar4-digital-twin) describes
 the task and how it is graded. This repository holds the environment, a starter for your agent,
-and the tools that check your work. The course runs the same tools at grading time.
+and the tools that check your work. The course runs the same checks again at grading time, as
+[How the course grades](#how-the-course-grades) lists.
 
 ## Where the tools fit
 
@@ -17,7 +18,7 @@ submit, along with your code.
 
 ```mermaid
 graph TB
-    docs["AR4 manual, datasheets<br/>the only sources you may use"]
+    docs["AR4 manual, datasheets, spreadsheets<br/>and the few other sources listed below"]
     kdb["kDB of AR4 specs<br/>every value with a cited source"]
     agent["Your agent, on Pydantic AI<br/>reads the documents, drives FreeCAD"]
     kcheck["okf-validate, okf-ground<br/>kdb-tools with the ar4 profile"]
@@ -51,6 +52,18 @@ graph TB
 
 The public AR4 URDF and Annin's CAD files are not sources. Your geometry comes from the
 dimensions in the documents, and your masses come from material densities and datasheets.
+
+Two kinds of software are sources too, but only for the values named here:
+
+| Source | You may cite it for |
+|---|---|
+| The lab's AR4 firmware, `annin_ar4_firmware/AR4_teensy/AR4_teensy.ino` in [aegean-ai/ar4_ros_driver](https://github.com/aegean-ai/ar4_ros_driver) | each joint's velocity limit (`JOINT_MAX_SPEED`) |
+| The gripper driver: [ar4_ros_driver](https://github.com/ycheng517/ar4_ros_driver) (its gripper driver configuration and code, the gripper firmware `AR4_nano.ino`, and the jaw travel the driver reads as its closed and open positions, which is 14 mm in the driver's `ar_gripper_macro.xacro`) and the [Arduino Servo library](https://github.com/arduino-libraries/Servo) the firmware uses | the gripper's `jaw_force` and `jaw_speed`, and the values you compute them from |
+
+Cite the file, the commit and the line or key, as you cite a page of a PDF. Nothing else in these
+repositories is a source. The URDF and the driver's description package stay out for any
+geometry, mass or inertia. The jaw travel is the one value you may take from that package, and only
+to compute `jaw_force` and `jaw_speed`, not to size the gripper.
 
 The gripper is the one exception. You model Annin's servo gripper, described in Chapter 5 of the
 AR4 MK4 robot manual v1.1. Its STEP files, in `AR4-Servo-Gripper-CAD.zip` in the
@@ -106,6 +119,7 @@ Check the kDB, the agent's FreeCAD calls and the twin:
 docker/run.sh okf-validate kdb
 docker/run.sh okf-ground kdb
 docker/run.sh twin-mcp-log summary logs/mcp-calls.jsonl
+docker/run.sh twin-guisave               # save every document in cad/ once with GUI FreeCAD
 docker/run.sh twin-sync                   # the FreeCAD documents in cad/ against the kDB
 docker/run.sh twin-check twin/build.py
 docker/run.sh twin-check twin/build.py --json   # a report your agent can read
@@ -136,6 +150,10 @@ sentence in a PDF, or a spreadsheet cell cited by file, sheet and cell:
 sources:
   - {id: dh-d1, resource: /documents/ar4-dh.xlsx, sheet: DH, cell: C2, value: "150"}
 ```
+
+A value from the firmware or the driver goes into a CSV file under `kdb/documents/`, one row per
+value, with the file, commit and line or key it came from. The source then cites the CSV cell,
+as in `{id: j1-speed, resource: /documents/driver-values.csv, cell: B2, value: "60"}`.
 
 The `ar4` profile checks the pages. Every quantity needs a number, a unit from `twin_tools.units`,
 and a source or a formula. A formula is recomputed and must give the stated value. A Joint needs
@@ -205,9 +223,21 @@ does not publish, so a skill that only works on the practice worlds loses points
 self-collision flags in a round's report are informational. They do not change a verdict or the
 success rate.
 
-The course refuses to grade a submission, and says why, in two cases. The first is a twin that fails
-`twin-check`. The second is a skill file that does not fit the interface, which `check_skill`
-reports. Run both on your submission before you hand it in.
+Before it runs a round, the course checks your submission and refuses to grade it, saying why, when
+any of these checks reports an error:
+
+1. `okf-validate` on `kdb/` with the `ar4` profile. The grader checks the pages only and does not
+   open a lake, so the `action.no-lake` warning does not matter.
+2. `okf-ground` on `kdb/`.
+3. `twin-sync` on `cad/` against `kdb/`.
+4. `twin-check` on `twin/build.py`.
+5. `check_skill` on your `pick` and `place` skill files.
+
+Warnings do not refuse a submission. The grader takes `twin/build.py`, `kdb/` and `cad/ar4.FCStd`
+from your one repository, and the round's record names that assembly. It refuses a submission
+whose `cad/ar4.FCStd` is missing, or whose `kdb/` or `cad/ar4.FCStd` is a symlink to a place
+outside the repository. `twin-sync` compares only the documents at the top of `cad/` with the
+kDB, so grading does not check the gripper's documents in `cad/gripper/` against the kDB. Check them yourself. Run every check on your submission before you hand it in.
 
 ## Tools
 
@@ -216,6 +246,7 @@ reports. Run both on your submission before you hand it in.
 | `twin-blwfish` | Starts the [blwfish FreeCAD MCP server](https://github.com/blwfish/freecad-mcp) (v8.4.0) on stdio behind the call logger. Point your agent's MCP configuration at it. |
 | `twin-mcp-log` | `run` logs every message between an agent and a stdio MCP server. `summary` lists the tool calls in a log and marks the failed ones, including failures the server reports as successes. |
 | `twin-check` | Loads `twin/build.py`, builds the Newton model and checks it: every link has mass, every joint has limits, an effort limit and a velocity limit, every one of those values and every shape density was read from the kDB, the gripper built alone matches the one on the arm, the axes of the joints labeled `J1` to `J6` follow the DH rows in the kDB, the arm released at rest under gravity stays finite and inside its limits, and the gripper holds the course cube. |
+| `twin-guisave` | Opens every `.FCStd` under `cad/`, `cad/gripper/` included, in GUI FreeCAD on a virtual display, shows the parts, gives each assembly joint its view provider, solves the assembly and saves. Run it in the container after every change to `cad/`. |
 | `twin-sync` | Opens the FreeCAD documents in `cad/` with `freecadcmd` and compares them with the kDB: every spreadsheet reference names a quantity, every spreadsheet value matches it (in the assembly's sheet too, if it has one), every sketch constraint and pad length is bound to the spreadsheet, every STL matches its recomputed part, and every link sits at its DH frame in `cad/ar4.FCStd`. Run it in the container. |
 | `okf-validate`, `okf-ground` | The [kdb-tools](https://github.com/aegean-ai/kdb-tools) checks, with the `ar4` profile's rules. `okf-ground` checks every source against its document. |
 
@@ -223,8 +254,18 @@ Newton accepts a joint with no limits and a link with no mass without complaint.
 limits of 1e10 and effort and velocity limits of 1e6, gives an empty link a mass of 0 and a
 shape with no density 1000 kg/m³. `twin-check` reports each of these. It also reports any limit,
 density or mass that `build.py` typed in instead of reading from the kDB with
-`twin_tools.kdb.si`. A value must match a read of the right kind: a revolute joint's limits,
-effort limit and velocity limit come from an angle, a torque and an angular speed, a prismatic
+`twin_tools.kdb.si`. The check follows the exact number object `si` returned, so pass that number
+to the builder unchanged. A typed number is reported even when some read gave the same number.
+So is a number computed from reads, such as a sum or a ratio. If the twin needs a computed value,
+put it on a kDB page as a formula quantity and read that. The read must also come from the page
+and quantity the value belongs to. Joint `J<n>` reads `lower_limit`, `upper_limit`, `effort_limit`
+and `velocity_limit` from `joints/j<n>.md`, and a joint with another label reads them from a Joint
+page. `JAW1` and `JAW2` read `jaw_stroke` (the open limit), `jaw_force` and `jaw_speed` from your
+Gripper page. A shape on a body labeled like a link page, such as `link-2` for
+`links/link-2.md`, takes its density from that link's Material page. Any other density must be a
+quantity named `density` or ending in `_density`, and a mass one named `mass` or ending in
+`_mass`. twin-check also reads each of these pages again from disk. A value must come from a read
+of the right kind: a revolute joint's limits, effort limit and velocity limit come from an angle, a torque and an angular speed, a prismatic
 joint's from a length, a force and a speed, a density from a density and a mass from a mass. A jaw's
 closed limit of 0 needs no page. Findings on the gripper that `build_gripper()` builds end in
 `(build_gripper)`. Use `--no-trace` while you develop, before your kDB has the values.
@@ -274,9 +315,15 @@ what it built instead of trusting the tool results.
 
 `twin-sync` finds the places where your FreeCAD documents have drifted from your kDB. Each link is
 one document, `cad/<page stem>.FCStd`, with its mesh `cad/<page stem>.stl` beside it, for the page
-`kdb/links/<page stem>.md`. The assembly is `cad/ar4.FCStd`. `twin-sync` reads only the
-`.FCStd` files at the top of `cad/`, so it does not check the gripper's documents. Keep them in a
-subdirectory, such as `cad/gripper/`, and check them against the kDB yourself.
+`kdb/links/<page stem>.md`. The assembly is `cad/ar4.FCStd`. `twin-sync` compares only the
+`.FCStd` files at the top of `cad/` with the kDB, so it does not check the gripper's documents
+against it. Keep them in a subdirectory, such as `cad/gripper/`, and check them against the kDB
+yourself.
+
+Save every document in `cad/` once with GUI FreeCAD by running `docker/run.sh twin-guisave` after
+each change, because the FreeCAD MCP server saves without the GUI and GUI FreeCAD then opens the
+parts hidden and the joints without markers. `twin-sync` reports any document under `cad/` that
+was not saved this way (`sync.gui`), and grading refuses it.
 
 Each link document has a spreadsheet labeled `kDB`. Row r holds three cells:
 
@@ -315,6 +362,7 @@ docker/run.sh twin-sync cad --json        # a report your agent can read
 | `sync.export` | An STL whose volume differs from the recomputed part by more than 0.5%. Export again after the kDB changes. The STL must be in millimetres. |
 | `sync.frame` | A link whose placement in the assembly differs from its DH frame at q = 0 by more than 1e-6 m or 1e-6 rad, a link document missing from the assembly, or a link document with no DH frame. |
 | `sync.load` | A document FreeCAD cannot open or recompute, or `freecadcmd` missing. |
+| `sync.gui` | A document anywhere under `cad/`, `cad/gripper/` included, saved without the GUI (it has no `GuiDocument.xml`), or an assembly joint with no view provider or hidden. Run `twin-guisave`. |
 
 The exit status is 0 when there are no findings, 1 when there are findings and 2 when the tool
 could not run.

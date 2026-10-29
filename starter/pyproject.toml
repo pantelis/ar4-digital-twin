@@ -23,8 +23,11 @@ build-backend = "hatchling.build"
 packages = ["twinagent"]
 
 [tool.uv.sources]
-ar4-twin-tools = { git = "https://github.com/pantelis/ar4-digital-twin" }
-kdb-tools = { git = "https://github.com/aegean-ai/kdb-tools", tag = "v0.4.0" }
+# The course tools this starter must track: the student repository's stage-4 branch (the twin-check trace binding,
+# the grading rules) and the kdb-tools release the course pins (v0.5.1, as in ../pyproject.toml). Relock after
+# either moves: uv lock --upgrade-package ar4-twin-tools --upgrade-package kdb-tools
+ar4-twin-tools = { git = "https://github.com/pantelis/ar4-digital-twin", branch = "stage-4" }
+kdb-tools = { git = "https://github.com/aegean-ai/kdb-tools", tag = "v0.5.1" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

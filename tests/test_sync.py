@@ -49,6 +49,13 @@ def test_a_link_off_its_dh_frame(tmp_path):
     assert found(sync.sync(cad_dir, kdb_dir)) == [("sync.frame", str(cad_dir / "ar4.FCStd"))]
 
 
+def test_documents_saved_headless_are_a_finding(tmp_path):
+    """freecadcmd writes no GuiDocument.xml; GUI FreeCAD would open the parts hidden and the joints with no markers."""
+    cad_dir, kdb_dir = cad.build(tmp_path, headless=True)
+    assert found(sync.sync(cad_dir, kdb_dir)) == [("sync.gui", str(cad_dir / "ar4.FCStd")),
+                                                  ("sync.gui", str(cad_dir / "link-2.FCStd"))]
+
+
 def test_a_corrupt_document_is_a_finding(tmp_path):
     cad_dir, kdb_dir = cad.build(tmp_path, corrupt=True)
     assert found(sync.sync(cad_dir, kdb_dir)) == [("sync.load", str(cad_dir / "link-2.FCStd"))]

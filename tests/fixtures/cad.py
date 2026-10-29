@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from twin_tools import dh, kdb
+from twin_tools import dh, guisave, kdb
 
 FIX = Path(__file__).parent / "kdb"
 DIMS = {"length": 280.0, "width": 40.0, "height": 30.0}  # mm
@@ -151,12 +151,15 @@ def frame2(kdb_dir: Path) -> np.ndarray:
 
 
 def build(tmp: Path, free_pad=False, sheet_value=None, bad_ref=False, stale_export=False, off_frame=False, corrupt=False,
-          unnamed=False, sheet_name="kDB", indirect=None, nested=False, omit_link=False, link=None, asm_sheet=None):
+          unnamed=False, sheet_name="kDB", indirect=None, nested=False, omit_link=False, link=None, asm_sheet=None,
+          headless=False):
     """Write tmp/kdb and tmp/cad. Each keyword makes one mutant or one variant that must stay clean:
     unnamed constraints, a sheet whose object name is not kDB, a pad bound through a constraint or a VarSet,
     link-2 nested in an App::Part, link-2 left out of the assembly, link-2 an App::Link to the saved link document
     (link="top" at the top level, "part" inside an App::Part, "assembly" inside an Assembly::AssemblyObject).
-    asm_sheet=280.0 gives the assembly a kDB sheet with link-2's length in mm; another number puts that sheet off the kDB."""
+    asm_sheet=280.0 gives the assembly a kDB sheet with link-2's length in mm; another number puts that sheet off the kDB.
+    The documents are then saved once with GUI FreeCAD (twin-guisave), as a student's must be; headless=True leaves them
+    as freecadcmd wrote them."""
     kdb_dir, cad_dir = tmp / "kdb", tmp / "cad"
     shutil.copytree(FIX, kdb_dir)
     (kdb_dir / "links").mkdir()
@@ -182,6 +185,9 @@ def build(tmp: Path, free_pad=False, sheet_value=None, bad_ref=False, stale_expo
     done = subprocess.run(["freecadcmd", str(script)], env=dict(os.environ, TWIN_CAD_SPEC=json.dumps(spec)),
                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=300)
     assert (cad_dir / "ar4.FCStd").is_file(), done.stdout + done.stderr
+    if not headless:
+        results = guisave.guisave(guisave.documents(cad_dir))
+        assert all(r.get("ok") for r in results), results
     write_stl(cad_dir / "link-2.stl", 280, 40, 36 if stale_export else 30)
     if corrupt:
         (cad_dir / "link-2.FCStd").write_bytes(b"this is not a FreeCAD document")

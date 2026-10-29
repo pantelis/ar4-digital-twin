@@ -16,6 +16,7 @@ sim = ["newton[sim]==1.7.0", "warp-lang==1.18.0", "numpy"]
 twin-mcp-log = "twin_tools.mcp_log:main"
 twin-check = "twin_tools.check:main"
 twin-sync = "twin_tools.sync:main"
+twin-guisave = "twin_tools.guisave:main"
 # The core's commands, declared here too: uv tool install exposes only this package's own commands.
 okf-validate = "kdb_tools.validate:main"
 okf-ground = "kdb_tools.ground:main"
