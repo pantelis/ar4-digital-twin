@@ -243,7 +243,11 @@ def _body_expects(label: str, what: str, root: Path | None = None):
         link = f"links/{label}.md"
         material = (_frontmatter(root, link) or {}).get("material")
         if isinstance(material, str):
-            page = posixpath.normpath(posixpath.join("links", material))
+            # A reference starting with / is relative to the kDB root, as kdb.si() records pages; else to links/.
+            if material.startswith("/"):
+                page = posixpath.normpath(material.lstrip("/"))
+            else:
+                page = posixpath.normpath(posixpath.join("links", material))
             return ((lambda r: (posixpath.normpath(r.page) == page and r.name == "density")
                      or (posixpath.normpath(r.page) == link and r.name.endswith("density"))),
                     f"{page} density (the Material of {link})")

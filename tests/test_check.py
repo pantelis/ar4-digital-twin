@@ -433,3 +433,4 @@ def test_penetration_is_how_far_a_jaw_passes_the_cubes_near_face():
     diag = Solid(G.SPHERE, (0.004, 0.0, 0.0), (0.006, 0.006, 0.0) + still)
     ball = Solid(G.SPHERE, (0.01, 0.0, 0.0), (0.0, 0.0, 0.0) + still)
     assert _penetration(d, [diag], ball) == pytest.approx(0.014 - 0.006 * math.sqrt(2))
+
